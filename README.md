@@ -1,2 +1,2 @@
-# CTFChallanges
-This repo holds solved CTF challanges allong with writeups for them.
+# CTFChallenges
+This repo holds solved CTF challenges along with writeups for them.
