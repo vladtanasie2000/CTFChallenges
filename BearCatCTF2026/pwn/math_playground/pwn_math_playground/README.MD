@@ -57,14 +57,11 @@ The leaked addresses in my case were :
 
 Using these addresses the first thing we do is set the libc.address in our python script.
 
-On i386 with ASLR enabled, libc addresses often appear in the high 32-bit address range, for example around 0xf7xxxxxx. Since we are using "%d" to send data to the application, scanf will parse our input as a signed 32-bit integer. This means that values above 0x7fffffff, such as 0xf7dd1e80, cannot be sent as positive integers.
-
-To preserve the same 32-bit bit pattern, we need to send these addresses as their signed two's-complement equivalent. In practice, if an address is larger than 0x7fffffff, we subtract 0x100000000 from it before sending it. The function we use, str(value).encode(), will then send the negative decimal representation, and scanf("%d") will store the correct 4-byte value in memory.
+On i386 with ASLR enabled, libc addresses often appear in the high 32-bit address range, for example around `0xf7xxxxxx`. Since we are using `"%d"` to send data to the application, `scanf` will parse our input as a signed 32-bit integer. This means that values above `0xf7xxxxxx`, such as `0xf7d4a8d0`, cannot be sent as positive integers.
+To preserve the same 32-bit bit pattern, we need to send these addresses as their signed two's-complement equivalent. In practice, if an address is larger than `0xf7xxxxxx`, we subtract `0x100000000` from it before sending it. The function we use, `str(value).encode()`, will then send the negative decimal representation, and `scanf("%d")` will store the correct 4-byte value in memory.
 
 Afterwards we need to look at libc.rip, to see which libC versions our applications could be using. After a few round of testing I found that it uses **"libc6-i386_2.36-9+deb12u13_amd64.so"**
-
 After also getting the libC version, the rest of the exploit is simple. Firstly we write `"/bin/sh\0"` at the BSS+100 using the same steps that we used to write the printf GOT. To do that we will do it in two passes (as it's a 8 byte value and `"%d"` accepts only 4 bytes).
-
 
 
 After the string has been writen, the final steps are to set the setvbuf GOT to system and then call "setvbuf" (the GOT entry for it) using the same trick with the values
@@ -73,6 +70,7 @@ After the string has been writen, the final steps are to set the setvbuf GOT to 
 * 0 as the last parameter doesn't matter
 
 Doing all of this and executing setvbuf we get a shell.
+
 
 
 

