@@ -1,0 +1,4 @@
+# Solution
+Here we needed to call `callme_one(0xdeadbeefdeadbeef, 0xcafebabecafebabe, 0xd00df00dd00df00d)`, `callme_two(0xdeadbeefdeadbeef, 0xcafebabecafebabe, 0xd00df00dd00df00d)` and `callme_three(0xdeadbeefdeadbeef, 0xcafebabecafebabe, 0xd00df00dd00df00d)` in this order in order to get the flag. 
+
+Thankfully by examining the binary using `ropper` I could find a gadget which did `pop rdi;pop rsi;pop rdx;ret` in one address. This meant that I didn't need to make seperate calls to each `pop` and I could just call this with my parameters set on the stack. Afterwards I needed to call the `callme` functions and I was done. 
